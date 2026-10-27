@@ -80,3 +80,5 @@ jobs:
           name: ghostgram-test-build-not-for-login
           path: /Users/Shared/telegram-ios/build/artifacts/Telegram.ipa
           if-no-files-found: error
+
+# Trigger build after enabling GitHub Actions.

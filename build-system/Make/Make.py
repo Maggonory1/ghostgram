@@ -625,6 +625,7 @@ def build(bazel, arguments):
         additional_codesigning_output_path=None
     )
 
+    bazel_command_line.set_disable_provisioning_profiles()
     bazel_command_line.set_configuration(arguments.configuration)
     bazel_command_line.set_build_number(arguments.buildNumber)
     bazel_command_line.set_custom_target(arguments.target)

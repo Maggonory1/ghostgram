@@ -50,13 +50,35 @@ jobs:
           echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
 
           python3 -c 'import json; p="build-system/appstore-configuration.json"; d=json.load(open(p)); d["api_id"]="12345"; d["api_hash"]="00000000000000000000000000000000"; json.dump(d,open(p,"w"))'
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("build-system/bazel-rules/rules_apple/apple/internal")
+          p = root / "partials/provisioning_profile.bzl"
+          text = p.read_text()
+          start = text.index("    if not profile_artifact:", text.index("def _provisioning_profile_partial_impl"))
+          end = text.index("    # Create intermediate file", start)
+          text = text[:start] + "    if not profile_artifact:\n        return struct(bundle_files = [])\n\n" + text[end:]
+          p.write_text(text)
+          p = root / "codesigning_support.bzl"
+          text = p.read_text()
+          start = text.index("    if (platform_prerequisites.platform.is_device", text.index("def _validate_provisioning_profile"))
+          end = text.index("\ndef _signing_command_lines(", start)
+          text = text[:start] + "    pass\n" + text[end:]
+          p.write_text(text)
+          PY
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
             build \
             --configurationPath="build-system/appstore-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
-            --configuration=release_sim_arm64 \
+            --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER"
 
 
+      - name: Upload experimental IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghostgram-experimental-placeholder-api
+          path: /Users/Shared/telegram-ios/bazel-bin/Telegram/Telegram.ipa
+          if-no-files-found: error

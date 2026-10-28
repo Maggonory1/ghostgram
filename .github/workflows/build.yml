@@ -60,7 +60,7 @@ jobs:
           echo "BUILD_NUMBER=$(echo $BUILD_NUMBER)" >> $GITHUB_ENV
           echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
 
-          python3 -c 'import json,os; p="build-system/appstore-configuration.json"; d=json.load(open(p)); d["api_id"]=os.environ["TELEGRAM_API_ID"]; d["api_hash"]=os.environ["TELEGRAM_API_HASH"]; json.dump(d,open(p,"w"))'
+          python3 -c 'import json,os; p="build-system/appstore-configuration.json"; d=json.load(open(p)); d["api_id"]=os.environ["TELEGRAM_API_ID"]; d["api_hash"]=os.environ["TELEGRAM_API_HASH"]; d["enable_siri"]=False; d["enable_icloud"]=False; d["is_appstore_build"]="false"; json.dump(d,open(p,"w"))'
           python3 - <<'PY'
           from pathlib import Path
           root = Path("build-system/bazel-rules/rules_apple/apple/internal")

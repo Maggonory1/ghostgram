@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  push:
+    branches: [ fix/ios-build ]
   workflow_dispatch:
 
 jobs:

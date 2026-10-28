@@ -356,6 +356,13 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         precondition(!testIsLaunched)
         testIsLaunched = true
+
+        let ghostgramDiagnosticDefaults = UserDefaults.standard
+        let ghostgramPreviousLaunchStage = ghostgramDiagnosticDefaults.string(forKey: "GhostgramDiagnosticLaunchStage")
+        func ghostgramMarkLaunchStage(_ stage: String) {
+            ghostgramDiagnosticDefaults.set(stage, forKey: "GhostgramDiagnosticLaunchStage")
+            ghostgramDiagnosticDefaults.synchronize()
+        }
         
         let _ = voipTokenPromise.get().start(next: { token in
             self.voipDeviceToken.set(.single(token))
@@ -389,13 +396,32 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         self.window = window
         self.nativeWindow = window
-        
+
+        if let previousStage = ghostgramPreviousLaunchStage {
+            ghostgramDiagnosticDefaults.removeObject(forKey: "GhostgramDiagnosticLaunchStage")
+            ghostgramDiagnosticDefaults.synchronize()
+            self.window?.makeKeyAndVisible()
+            let alert = UIAlertController(title: "Ghostgram diagnostic", message: "Previous launch stopped after stage: \(previousStage)", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            DispatchQueue.main.async {
+                self.mainWindow?.presentNative(alert)
+            }
+            return true
+        }
+        ghostgramMarkLaunchStage("window_ready")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) {
+            ghostgramDiagnosticDefaults.removeObject(forKey: "GhostgramDiagnosticLaunchStage")
+            ghostgramDiagnosticDefaults.synchronize()
+        }
+
+        ghostgramMarkLaunchStage("metal_engine")
         hostView.containerView.layer.addSublayer(MetalEngine.shared.rootLayer)
         
         if !UIDevice.current.isBatteryMonitoringEnabled {
             UIDevice.current.isBatteryMonitoringEnabled = true
         }
         
+        ghostgramMarkLaunchStage("notification_manager")
         let clearNotificationsManager = ClearNotificationsManager(getNotificationIds: { completion in
             if #available(iOS 10.0, *) {
                 UNUserNotificationCenter.current().getDeliveredNotifications(completionHandler: { notifications in
@@ -503,6 +529,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         let appVersion = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "unknown"
         
+        ghostgramMarkLaunchStage("build_config")
         let baseAppBundleId = Bundle.main.bundleIdentifier!
         let appGroupName = "group.\(baseAppBundleId)"
         let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
@@ -605,6 +632,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         // Personal sideload builds may not have an App Groups entitlement.
         // Use the app's private container if a shared group is unavailable.
+        ghostgramMarkLaunchStage("data_container")
         let appGroupUrl: URL
         if let sharedUrl = maybeAppGroupUrl {
             appGroupUrl = sharedUrl
@@ -641,13 +669,17 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             sgHardReset(dataPath: rootPath, present: self.mainWindow?.presentNative)
             return true
         }
+        ghostgramMarkLaunchStage("app_group_upgrades")
         performAppGroupUpgrades(appGroupPath: appGroupUrl.path, rootPath: rootPath)
         
+        ghostgramMarkLaunchStage("encryption")
         let deviceSpecificEncryptionParameters = BuildConfig.deviceSpecificEncryptionParameters(rootPath, baseAppBundleId: baseAppBundleId)
         let encryptionParameters = ValueBoxEncryptionParameters(forceEncryptionIfNoSet: false, key: ValueBoxEncryptionParameters.Key(data: deviceSpecificEncryptionParameters.key)!, salt: ValueBoxEncryptionParameters.Salt(data: deviceSpecificEncryptionParameters.salt)!)
         
+        ghostgramMarkLaunchStage("temp_box")
         TempBox.initializeShared(basePath: rootPath, processType: "app", launchSpecificId: Int64.random(in: Int64.min ... Int64.max))
         
+        ghostgramMarkLaunchStage("storage_test")
         let writeAbilityTestFile = TempBox.shared.tempFile(fileName: "test.bin")
         var writeAbilityTestSuccess = true
         if let testFile = ManagedFile(queue: nil, path: writeAbilityTestFile.path, mode: .readwrite) {
@@ -695,6 +727,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         let logsPath = rootPath + "/logs/app-logs"
         let _ = try? FileManager.default.createDirectory(atPath: logsPath, withIntermediateDirectories: true, attributes: nil)
+        ghostgramMarkLaunchStage("logging")
         Logger.setSharedLogger(Logger(rootPath: rootPath, basePath: logsPath))
 
         setManagedAudioSessionLogger({ s in
@@ -723,6 +756,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         //ASDisableLogging()
         
+        ghostgramMarkLaunchStage("legacy_components")
         initializeLegacyComponents(application: application, currentSizeClassGetter: {
             return UIUserInterfaceSizeClass.compact
         }, currentHorizontalClassGetter: {
@@ -745,6 +779,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         GlobalExperimentalSettings.isAppStoreBuild = buildConfig.isAppStoreBuild
         GlobalExperimentalSettings.enableFeed = false
         
+        ghostgramMarkLaunchStage("window_visible")
         self.window?.makeKeyAndVisible()
         
         var hasActiveCalls: Signal<Bool, NoError> = .single(false)
@@ -1002,6 +1037,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         })
         
+        ghostgramMarkLaunchStage("account_manager")
         let accountManager = AccountManager<TelegramAccountManagerTypes>(basePath: rootPath + "/accounts-metadata", isTemporary: false, isReadOnly: false, useCaches: true, removeDatabaseOnError: true)
         self.accountManager = accountManager
 
@@ -1044,6 +1080,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             })
             
             var setPresentationCall: ((PresentationCall?) -> Void)?
+            ghostgramMarkLaunchStage("shared_context")
             let sharedContext = SharedAccountContextImpl(mainWindow: self.mainWindow, sharedContainerPath: legacyBasePath, basePath: rootPath, encryptionParameters: encryptionParameters, accountManager: accountManager, appLockContext: appLockContext, notificationController: nil, applicationBindings: applicationBindings, initialPresentationDataAndSettings: initialPresentationDataAndSettings, networkArguments: networkArguments, hasInAppPurchases: buildConfig.isAppStoreBuild && buildConfig.apiId == 1, rootPath: rootPath, legacyBasePath: legacyBasePath, apsNotificationToken: self.notificationTokenPromise.get() |> map(Optional.init), voipNotificationToken: self.voipTokenPromise.get() |> map(Optional.init), firebaseSecretStream: self.firebaseSecretStream.get(), setNotificationCall: { call in
                 setPresentationCall?(call)
             }, navigateToChat: { accountId, peerId, messageId, alwaysKeepMessageId in
@@ -1728,6 +1765,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         })
         
+        ghostgramMarkLaunchStage("launch_complete")
         return true
     }
     

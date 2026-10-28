@@ -603,9 +603,20 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             |> runOn(Queue.mainQueue())
         }, autolockDeadine: autolockDeadine, encryptionProvider: OpenSSLEncryptionProvider(), deviceModelName: nil, useBetaFeatures: !buildConfig.isAppStoreBuild, isICloudEnabled: buildConfig.isICloudEnabled)
         
-        guard let appGroupUrl = maybeAppGroupUrl else {
-            self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Error 2", preferredStyle: .alert))
-            return true
+        // Personal sideload builds may not have an App Groups entitlement.
+        // Use the app's private container if a shared group is unavailable.
+        let appGroupUrl: URL
+        if let sharedUrl = maybeAppGroupUrl {
+            appGroupUrl = sharedUrl
+        } else {
+            let privateUrl = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GhostgramData", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: privateUrl, withIntermediateDirectories: true)
+                appGroupUrl = privateUrl
+            } catch {
+                self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Unable to create local data directory.", preferredStyle: .alert))
+                return true
+            }
         }
         
         var isDebugConfiguration = false
